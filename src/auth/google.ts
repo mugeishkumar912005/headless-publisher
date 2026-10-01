@@ -1,131 +1,99 @@
 import "dotenv/config";
-import http from "node:http";
 import { google } from "googleapis";
+import http from "node:http";
 import open from "open";
-import { saveTokens } from "../storage/tokens.js";
 
-const PORT = 53682;
-console.log("step1")
-const oauth2Client = new google.auth.OAuth2(
-  process.env.CLIENT_ID,
-  process.env.CLIENT_SECRET,
-  process.env.YOUTUBE_REDIRECT_URI
-);
-
-
-console.log("oauth2Client:", oauth2Client);
-console.log("step2")
-const scopes = [
+const SCOPES = [
   "https://www.googleapis.com/auth/youtube.upload",
-  "https://www.googleapis.com/auth/youtube.readonly"
 ];
 
-export async function authenticateYouTube() {
-  console.log("step3")
-  const state = crypto.randomUUID();
+export async function authenticateYouTube(): Promise<void> {
+  const oauth2Client = new google.auth.OAuth2(
+    process.env.CLIENT_ID,
+    process.env.CLIENT_SECRET,
+    process.env.YOUTUBE_REDIRECT_URI
+  );
 
   const authUrl = oauth2Client.generateAuthUrl({
     access_type: "offline",
     prompt: "consent",
-    scope: scopes,
-    state,
-  });
-  console.log("authUrl:", authUrl);
-  const server = http.createServer(async (req, res) => {
-    if (!req.url?.startsWith("/oauth2callback")) {
-      res.writeHead(404);
-      res.end("Not found");
-      return;
-    }
-    
-    const url = new URL(
-      req.url,
-      `http://localhost:${PORT}`
-    );
-    console.log("url:", url);
-
-    const code = url.searchParams.get("code");
-    const returnedState = url.searchParams.get("state");
-    const error = url.searchParams.get("error");
-
-    console.log("code:", code);
-    console.log("state:", state);
-    console.log("returnedState:", returnedState);
-
-    if (error) {
-      res.writeHead(400);
-      res.end(`Google OAuth failed: ${error}`);
-      server.close();
-      return;
-    }
-
-    if (!code) {
-      res.writeHead(400);
-      res.end("Authorization code missing");
-      server.close();
-      return;
-    }
-
-    if (returnedState !== state) {
-      res.writeHead(400);
-      res.end("Invalid OAuth state");
-      server.close();
-      return;
-    }
-
-    try {
-      const { tokens } =
-        await oauth2Client.getToken(code);
-
-      saveTokens(tokens);
-
-      res.writeHead(200, {
-        "Content-Type": "text/html",
-      });
-
-      res.end(`
-        <html>
-          <body>
-            <h2>YouTube authorization successful ✅</h2>
-            <p>You can close this tab and return to the terminal.</p>
-          </body>
-        </html>
-      `);
-
-      console.log("\n✅ YouTube authorization successful!");
-      console.log("✅ Tokens saved to data/tokens.json");
-
-      server.close();
-    } catch (err) {
-      console.error(
-        "\n❌ Failed to exchange authorization code:",
-        err
-      );
-
-      res.writeHead(500);
-      res.end("OAuth token exchange failed");
-
-      server.close();
-    }
+    scope: SCOPES,
   });
 
-  await new Promise<void>((resolve, reject) => {
-    server.listen(PORT, "localhost", () => {
-      resolve();
-    });
-
-    server.on("error", reject);
-  });
-
-  console.log("Opening Google authorization...");
-  console.log();
-
+  console.log("\n🔐 Opening YouTube authorization...");
   console.log(authUrl);
 
   await open(authUrl);
 
-  console.log();
-  console.log(
-    `Waiting for Google callback on http://localhost:${PORT}...`
+  const redirectUrl = new URL(
+    process.env.YOUTUBE_REDIRECT_URI!
+  );
+
+  const server = http.createServer(
+    async (req, res) => {
+      try {
+        if (!req.url?.startsWith("/oauth2callback")) {
+          res.writeHead(404);
+          res.end();
+          return;
+        }
+
+        const url = new URL(
+          req.url,
+          process.env.YOUTUBE_REDIRECT_URI
+        );
+
+        const code = url.searchParams.get("code");
+
+        if (!code) {
+          throw new Error(
+            "Authorization code was not provided."
+          );
+        }
+
+        const { tokens } =
+          await oauth2Client.getToken(code);
+
+        if (!tokens.refresh_token) {
+          throw new Error(
+            "No refresh token received. Run authorization again with consent."
+          );
+        }
+
+        console.log("\n✅ Authorization successful!");
+
+        console.log(
+          "\nYOUTUBE_REFRESH_TOKEN="
+        );
+        console.log(tokens.refresh_token);
+
+        res.writeHead(200);
+        res.end(
+          "Authorization successful. You can close this window."
+        );
+
+        server.close();
+      } catch (error) {
+        console.error(
+          "\n❌ Authentication failed:",
+          error
+        );
+
+        res.writeHead(500);
+        res.end("Authentication failed.");
+
+        server.close();
+      }
+    }
+  );
+
+  server.listen(
+    Number(redirectUrl.port),
+    redirectUrl.hostname,
+    () => {
+      console.log(
+        `\n🌐 Waiting for callback on ${process.env.YOUTUBE_REDIRECT_URI}`
+      );
+    }
   );
 }
