@@ -10,7 +10,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
 
-    environment: "CLIENT_SECRET=YOUR_CURRENT_VALUE"
+    environment: "Production"
 
     steps:
       - name: Checkout
