@@ -4,14 +4,13 @@ on:
   schedule:
     - cron: "30 2 * * *"
     - cron: "30 11 * * *"
-
   workflow_dispatch:
 
 jobs:
   publish:
     runs-on: ubuntu-latest
 
-    environment: Environment "CLIENT_SECRET=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" 
+    environment: "CLIENT_SECRET=YOUR_CURRENT_VALUE"
 
     steps:
       - name: Checkout
